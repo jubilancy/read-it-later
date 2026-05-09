@@ -76,14 +76,17 @@ def main():
     url = None
     
     # repository_dispatch: new-url event
-    if "client_payload" in payload and "url" in payload.get("client_payload", {}):
-        url = payload["client_payload"]["url"]
+    client_payload = payload.get("client_payload")
+    if isinstance(client_payload, dict) and "url" in client_payload:
+        url = client_payload["url"]
     # Direct POST with url field
     elif "url" in payload:
         url = payload["url"]
     # workflow_call inputs
-    elif "inputs" in payload and "url" in payload.get("inputs", {}):
-        url = payload["inputs"]["url"]
+    else:
+        inputs = payload.get("inputs")
+        if isinstance(inputs, dict) and "url" in inputs:
+            url = inputs["url"]
     
     # If triggered by push (not a real article request), skip processing
     if not url and payload.get("ref"):
