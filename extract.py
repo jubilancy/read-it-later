@@ -1,170 +1,97 @@
+#!/usr/bin/env python3
+"""
+Extract article metadata from URL
+"""
+
 import json
-import logging
-import hashlib
-import urllib.parse
-from datetime import datetime
+import os
 import sys
-import re
-from pathlib import Path
-import requests
-from bs4 import BeautifulSoup
-from readability import Document
+from urllib.parse import urlparse
+from datetime import datetime
 
-METADATA_FILE = Path("metadata.json")
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-def load_payload():
-    try:
-        with open("payload.json") as f:
-            payload = json.load(f)
-        url = payload.get("client_payload", {}).get("url")
-        if url:
-            logger.info(f"Loaded URL from payload: {url}")
-            return url
-        else:
-            logger.info("No URL found in payload - likely triggered by push event")
-            return None
-    except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
-        logger.error(f"Error loading payload: {e}")
-        return None
-
-def get_url_hash(url):
-    return hashlib.md5(url.encode()).hexdigest()[:8]
-
-def load_metadata():
-    try:
-        if METADATA_FILE.exists():
-            with open(METADATA_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-    except Exception as e:
-        logger.error(f"Error loading metadata: {e}")
-    return {}
-
-def save_metadata(metadata):
-    try:
-        with open(METADATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(metadata, f, indent=2, ensure_ascii=False)
-        logger.info("Metadata saved successfully")
-    except Exception as e:
-        logger.error(f"Error saving metadata: {e}")
+try:
+    from newspaper import Article
+except ImportError:
+    print("⚠️ newspaper3k not installed, using basic extraction")
+    Article = None
 
 def extract_article(url):
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-        resp = requests.get(url, headers=headers, timeout=15)
-        resp.raise_for_status()
-        doc = Document(resp.text)
-        title = doc.short_title()
-        summary_html = doc.summary(html_partial=False)
-        soup = BeautifulSoup(summary_html, "html.parser")
-
-        # Try to extract author from meta tags
-        author = ""
-        meta_author = soup.find("meta", attrs={"name": "author"})
-        if meta_author and meta_author.get("content"):
-            author = meta_author["content"]
-        else:
-            og_author = soup.find("meta", attrs={"property": "article:author"})
-            if og_author and og_author.get("content"):
-                author = og_author["content"]
-
-        # Try to extract publish date from meta tags
-        date = ""
-        meta_date = soup.find("meta", attrs={"property": "article:published_time"})
-        if meta_date and meta_date.get("content"):
-            date = meta_date["content"]
-        else:
-            meta_date = soup.find("meta", attrs={"name": "date"})
-            if meta_date and meta_date.get("content"):
-                date = meta_date["content"]
-
-        logger.info(f"Successfully extracted article: {title}")
-        return {
-            "title": title,
-            "content_html": str(soup),
-            "authors": [author] if author else [],
-            "publish_date": date,
-            "url": url,
-        }
-    except Exception as e:
-        logger.error(f"Error extracting article from {url}: {e}")
-        raise
-
-def process_images(article_html, article_url):
-    """Ensures all image URLs are absolute, but does not download them."""
-    try:
-        soup = BeautifulSoup(article_html, 'html.parser')
-        for img in soup.find_all('img'):
-            img_url = img.get('src')
-            if img_url:
-                img['src'] = urllib.parse.urljoin(article_url, img_url)
-        return str(soup)
-    except Exception as e:
-        logger.error(f"Error processing images: {e}")
-        return article_html
-
-def check_duplicate(url):
-    metadata = load_metadata()
-    url_hash = get_url_hash(url)
-    for entry_id, entry_data in metadata.items():
-        if entry_data.get('url') == url or entry_data.get('url_hash') == url_hash:
-            logger.info(f"Duplicate found: {entry_id}")
-            return entry_id
-    return None
-
-def save_article_content(article, url):
-    try:
-        duplicate = check_duplicate(url)
-        if duplicate:
-            logger.info(f"Article already exists: {duplicate}")
-            return duplicate
-
-        article_content = process_images(article["content_html"], url)
-        publish_date = article["publish_date"] or datetime.now().isoformat()
-        metadata = load_metadata()
-        entry_id = f"{datetime.now().strftime('%Y-%m-%d-%H%M')}-{re.sub(r'[^a-zA-Z0-9-]', '', article['title'].lower())[:50]}"
-        metadata[entry_id] = {
-            'title': article["title"],
-            'url': url,
-            'url_hash': get_url_hash(url),
-            'date': publish_date,
-            'authors': article["authors"],
-            'content_html': article_content,
-            'summary': article["title"]
-        }
-        save_metadata(metadata)
-        logger.info(f"Saved new article: {entry_id}")
-        return entry_id
-
-    except Exception as e:
-        logger.error(f"Error saving article: {e}")
-        raise
+    """Extract article metadata"""
+    result = {
+        'url': url,
+        'title': url,
+        'excerpt': '',
+        'date': datetime.now().isoformat(),
+        'tags': [],
+        'saved_at': datetime.now().isoformat()
+    }
+    
+    if Article:
+        try:
+            article = Article(url)
+            article.download()
+            article.parse()
+            
+            result['title'] = article.title or url
+            result['excerpt'] = article.meta_description or article.text[:200] if article.text else ''
+            
+            if article.publish_date:
+                result['date'] = article.publish_date.isoformat()
+                
+        except Exception as e:
+            print(f"⚠️ Newspaper extraction failed: {e}")
+    
+    return result
 
 def main():
-    try:
-        logger.info("Starting extraction process...")
-        url = load_payload()
-        if url:
-            logger.info(f"Processing URL: {url}")
-            try:
-                article = extract_article(url)
-                if article and article["title"]:
-                    save_article_content(article, url)
-                    logger.info("Article saved successfully")
-                else:
-                    logger.error("Failed to extract article or article has no title")
-            except Exception as e:
-                logger.error(f"Failed to process article: {e}")
-        else:
-            logger.info("No URL to process")
-        logger.info("Process completed")
-    except Exception as e:
-        logger.error(f"Fatal error in main process: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+    # Load the event payload
+    payload_file = 'payload.json'
+    if not os.path.exists(payload_file):
+        print("❌ No payload.json found")
         sys.exit(1)
+    
+    with open(payload_file, 'r') as f:
+        payload = json.load(f)
+    
+    # Extract URL from the dispatch event
+    url = None
+    if 'client_payload' in payload and 'url' in payload['client_payload']:
+        url = payload['client_payload']['url']
+    elif 'inputs' in payload and 'url' in payload['inputs']:
+        url = payload['inputs']['url']
+    
+    if not url:
+        print("❌ No URL found in payload")
+        sys.exit(1)
+    
+    print(f"📖 Extracting: {url}")
+    
+    # Extract article
+    article_data = extract_article(url)
+    
+    # Load existing metadata.json
+    metadata_file = 'metadata.json'
+    existing_articles = []
+    
+    if os.path.exists(metadata_file):
+        with open(metadata_file, 'r') as f:
+            existing_articles = json.load(f)
+            if not isinstance(existing_articles, list):
+                existing_articles = [existing_articles] if existing_articles else []
+    
+    # Check for duplicates
+    urls_existing = [a.get('url') for a in existing_articles if isinstance(a, dict)]
+    if article_data['url'] not in urls_existing:
+        existing_articles.append(article_data)
+        print(f"✅ Added new article: {article_data['title']}")
+    else:
+        print(f"⏭️  Article already exists: {article_data['title']}")
+    
+    # Save metadata
+    with open(metadata_file, 'w') as f:
+        json.dump(existing_articles, f, indent=2)
+    
+    print(f"📊 Total articles: {len(existing_articles)}")
 
 if __name__ == "__main__":
     main()
