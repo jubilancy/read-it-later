@@ -1,4 +1,4 @@
-# Git Pocket - GitHub Actions
+# Git Pocket via GitHub Actions
 
 A powerful "Read It Later" tool that saves web articles to your own GitHub Pages site using GitHub Actions. Your personal reading archive powered by GitHub with advanced features like search, RSS feeds, and image handling.
 
