@@ -1,7 +1,9 @@
-name: Save Article Metadata
+name: Save Article & Build Site
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 on:
   push:
@@ -13,33 +15,180 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout source repo
         uses: actions/checkout@v4
-
+        with:
+          fetch-depth: 0
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
+      
       - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Extract and write article
+        run: |
+          pip install requests beautifulsoup4 newspaper3k lxml html5lib
+          # Create requirements.txt if needed for future runs
+          pip freeze > requirements.txt
+      
+      - name: Extract and save article metadata
         run: |
           echo '${{ toJson(github.event) }}' > payload.json
           python extract.py
-
-      - name: Prepare site folder
+        continue-on-error: false
+      
+      - name: Build complete HTML site
         run: |
-          mkdir site
-          cp metadata.json site/ 2>/dev/null || echo "No metadata file found"
-          echo "gitpocket.saeedm.com" > site/CNAME
-
-      - name: Commit and push metadata.json
+          mkdir -p site/_articles site/assets site/css
+          
+          # Copy assets if they exist in source
+          cp -r assets/* site/assets/ 2>/dev/null || echo "No assets folder"
+          cp -r css/* site/css/ 2>/dev/null || echo "No css folder"
+          
+          # Create style.css if it doesn't exist
+          cat > site/css/style.css << 'EOF'
+          /* Modern Read-it-Later Styles */
+          :root {
+            --primary: #3b82f6;
+            --bg: #ffffff;
+            --text: #1f2937;
+            --text-light: #6b7280;
+            --border: #e5e7eb;
+          }
+          
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 2rem 1rem;
+          }
+          
+          .container {
+            max-width: 1200px;
+            margin: 0 auto;
+          }
+          
+          header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 2px solid var(--border);
+          }
+          
+          h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, var(--primary), #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+          }
+          
+          .stats {
+            color: var(--text-light);
+            font-size: 0.9rem;
+          }
+          
+          .articles-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1.5rem;
+          }
+          
+          .article-card {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+          }
+          
+          .article-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
+          }
+          
+          .article-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+          }
+          
+          .article-title a {
+            color: var(--text);
+            text-decoration: none;
+          }
+          
+          .article-title a:hover {
+            color: var(--primary);
+          }
+          
+          .article-meta {
+            font-size: 0.875rem;
+            color: var(--text-light);
+            margin-bottom: 1rem;
+          }
+          
+          .article-excerpt {
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+            line-height: 1.5;
+          }
+          
+          .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+          }
+          
+          .tag {
+            background: #f3f4f6;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            color: var(--text-light);
+          }
+          
+          @media (max-width: 768px) {
+            body { padding: 1rem; }
+            .articles-grid { grid-template-columns: 1fr; }
+            h1 { font-size: 1.75rem; }
+          }
+          EOF
+          
+          # Generate the main index.html
+          python generate_site.py
+      
+      - name: Commit and push to main (metadata)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add metadata.json
-          git commit -m "Update metadata.json [skip ci]" || echo "No changes to commit"
+          git add metadata.json payload.json requirements.txt
+          git commit -m "Update article metadata [skip ci]" || echo "No metadata changes"
           git push origin main
+      
+      - name: Deploy to gh-pages branch
+        run: |
+          # Check if gh-pages exists remotely
+          if git ls-remote --exit-code --heads origin gh-pages; then
+            git checkout gh-pages || git checkout --orphan gh-pages
+          else
+            git checkout --orphan gh-pages
+          fi
+          
+          # Clean and copy new site
+          git rm -rf . 2>/dev/null || true
+          cp -r site/* .
+          
+          # Add all files
+          git add .
+          git commit -m "Deploy site - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          git push origin gh-pages --force
