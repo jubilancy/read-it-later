@@ -1,4 +1,6 @@
-readability-lxml
-lxml[html_clean]
+newspaper3k==0.2.8
+lxml==4.9.4
+lxml_html_clean
 beautifulsoup4
 requests
+Pillow
