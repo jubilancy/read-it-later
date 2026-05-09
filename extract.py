@@ -72,18 +72,29 @@ def main():
     with open(payload_file, "r") as f:
         payload = json.load(f)
 
-    # Support all the ways a URL can arrive
+    # Extract URL from various trigger types
     url = None
+    
+    # repository_dispatch: new-url event
     if "client_payload" in payload and "url" in payload.get("client_payload", {}):
         url = payload["client_payload"]["url"]
+    # Direct POST with url field
     elif "url" in payload:
         url = payload["url"]
+    # workflow_call inputs
     elif "inputs" in payload and "url" in payload.get("inputs", {}):
         url = payload["inputs"]["url"]
+    
+    # If triggered by push (not a real article request), skip processing
+    if not url and payload.get("ref"):
+        print("ℹ️  Push event detected, no URL to process — skipping extraction")
+        print("   (Use repository_dispatch with a URL or run manually to add articles)")
+        sys.exit(0)
 
     if not url:
         print("❌ No URL found in payload")
         print(f"   Payload keys: {list(payload.keys())}")
+        print(f"   Event type: {payload.get('action', 'unknown')}")
         sys.exit(1)
 
     print(f"🔗 Processing: {url}")
