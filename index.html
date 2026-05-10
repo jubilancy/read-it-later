@@ -10,7 +10,7 @@
   <div class="container">
     <header>
       <h1>📚 My Reading List</h1>
-      <p class="stats">1 article saved &mdash; last updated May 09, 2026</p>
+      <p class="stats">1 article saved &mdash; last updated May 10, 2026</p>
     </header>
 
     <input id="search" type="search" placeholder="🔍 Search articles…" autocomplete="off">
@@ -20,7 +20,7 @@
     <article class="article-card">
       
       <h2 class="article-title">
-        <a href="https://rateyourmusic.com/artist/marcoca" target="_blank" rel="noopener noreferrer">https://rateyourmusic.com/artist/marcoca</a>
+        <a href="#">https://rateyourmusic.com/artist/marcoca</a>
       </h2>
       <div class="article-meta">📅 May 09, 2026</div>
       <p class="article-excerpt"></p>
@@ -43,7 +43,6 @@ input.addEventListener('input', () => {
     if (show) visible++;
   });
 
-  // Show/hide empty state
   let empty = document.querySelector('.empty');
   if (!empty) {
     empty = document.createElement('p');
