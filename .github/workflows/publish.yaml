@@ -47,7 +47,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Stash the built site somewhere safe before switching branches
+          # Remove payload.json to avoid conflicts
+          rm -f payload.json
+
+          # Stash the built site somewhere safe
           cp -r site /tmp/site-deploy
 
           # Switch to (or create) gh-pages
