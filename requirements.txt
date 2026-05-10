@@ -1,4 +1,5 @@
 newspaper3k==0.2.8
+readability-lxml
 lxml==4.9.4
 lxml_html_clean
 beautifulsoup4
