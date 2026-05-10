@@ -39,9 +39,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Only add metadata.json if it exists
+          # Force add metadata.json even if ignored
           if [ -f "metadata.json" ]; then
-            git add metadata.json
+            git add -f metadata.json
             git diff --staged --quiet || git commit -m "chore: update article metadata [skip ci]"
             git push origin main
           else
